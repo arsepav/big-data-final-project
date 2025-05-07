@@ -76,7 +76,7 @@ def clean_array_string(value):
 
 
 def convert_arrays(df):
-    """Convert array columns to PostgreSQL format with strict validation"""
+    """Convert array columns to PostgreSQL format"""
     for col in ['authors', 'categories']:
         if col in df.columns:
             df[col] = (
@@ -86,7 +86,6 @@ def convert_arrays(df):
 
 
 def clean_numeric_columns(df):
-    """Clean numeric columns with strict validation"""
     if 'ratings_count' in df.columns:
         df['ratings_count'] = (
             df['ratings_count'].replace(['', 'nan', 'NULL'], None)
@@ -124,7 +123,6 @@ def clean_score(score):
             print(f'Failed to convert fraction {score}: {e}')
             return None
 
-    # Handle regular numeric scores
     try:
         result = min(5.0, max(0.0, float(score)))
         #print(f'Converted numeric: {score} -> {result}')
@@ -135,7 +133,7 @@ def clean_score(score):
 
 
 def filter_reviews_chunk(chunk, valid_titles):
-    """Filter a chunk of reviews based on valid titles"""
+    """Filter a chunk of reviews with column rename"""
     chunk = chunk.rename(columns={
         'Id': 'book_id',
         'Title': 'book_title',
@@ -193,8 +191,8 @@ def main():
     # Read password
     with open(os.path.join(secrets_dir, "password.psql.pass"), "r") as f:
         password = f.read().strip()
-    # Process books data with strict validation
-    print("Processing books data with strict validation...")
+        
+    print("Processing books data")
     books = pd.read_csv(books_csv, encoding='utf-8')
     books = clean_and_prepare_books(books)
 
@@ -202,15 +200,15 @@ def main():
     books['authors'] = books['authors'].apply(
         lambda x: None if x and (x == '{}' or x.endswith(',}')) else x)
 
-    # Save with explicit NULL handling
+    # Save with NULL handling
     books.to_csv(books_processed, index=False, encoding='utf-8', na_rep='NULL')
     valid_titles = set(books['title'])
 
     # Filter reviews data
-    print("Filtering reviews data...")
+    print("Filtering reviews data")
     filter_large_reviews_file(reviews_csv, reviews_filtered, valid_titles)
 
-    print("Loading data into PostgreSQL with final validation...")
+    print("Loading data into PostgreSQL")
     try:
         with psql.connect(
                 host="hadoop-04.uni.innopolis.ru",
@@ -228,18 +226,17 @@ def main():
             # Import data with additional validation
             with open(os.path.join(sql_dir, "import_data.sql"), 'r', encoding='utf-8') as f:
                 commands = f.readlines()
-
-            # Import books with line-by-line validation and progress bar
-            print("Importing books...")
+                
+            print("Importing books")
             with open(books_processed, 'r', encoding='utf-8') as f:
                 # Skip header
                 next(f)
                 cur.copy_expert(commands[0], f)
                 conn.commit()
             # Import reviews with progress bar
-            print("Importing reviews...")
+            print("Importing reviews")
             total_reviews = count_lines(reviews_filtered) - 1
-            print(total_reviews)
+            #print(total_reviews)
             with open(reviews_filtered, 'r', encoding='utf-8') as f:
                 next(f)
                 cur.copy_expert(commands[1], f)
