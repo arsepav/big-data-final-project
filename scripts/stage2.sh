@@ -18,5 +18,7 @@ beeline -u jdbc:hive2://hadoop-03.uni.innopolis.ru:10001 -n team27 -p dhwKK44iKQ
 hdfs dfs -cat project/output/q4/* > output/q4.csv
 beeline -u jdbc:hive2://hadoop-03.uni.innopolis.ru:10001 -n team27 -p dhwKK44iKQhUF2Gq -f sql/q5.hql
 hdfs dfs -cat project/output/q5/* > output/q5.csv
+beeline -u jdbc:hive2://hadoop-03.uni.innopolis.ru:10001 -n team27 -p dhwKK44iKQhUF2Gq -f sql/q6.hql
+hdfs dfs -cat project/output/q6/* > output/q6.csv
 
 echo "All the operations are complete"
