@@ -468,7 +468,7 @@ for col_name in tfidf_cols:
     test_df = test_df.withColumn(col_name, convert_udf(F.col(col_name)))
 
 test_df = test_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
- = .withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
+train_df = train_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
 
 numerical_cols = [
     "author_idx", "book_idx", "category_idx", "helpfulness_wilson",
@@ -480,7 +480,7 @@ numerical_cols = [
     "review_year", "user_idx"
 ]
 
- = .dropna(subset = tfidf_cols + numerical_cols)
+train_df = train_df.dropna(subset = tfidf_cols + numerical_cols)
 test_df = test_df.dropna(subset = tfidf_cols + numerical_cols)
 
 
