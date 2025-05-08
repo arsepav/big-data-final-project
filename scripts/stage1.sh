@@ -1,13 +1,13 @@
 #!/bin/bash
 
-bash DownloadScript.sh
+bash scripts/DownloadScript.sh
 
 if [ $? -ne 0 ]; then
   echo "ERROR: Download failed!"
   exit 1
 fi
 
-python3 build_projectdb.py
+python3 scripts/build_projectdb.py
 
 
 if [ $? -ne 0 ]; then
@@ -43,5 +43,5 @@ sqoop import \
   --m 1
 
 
-rm -f ~/data/books_data.csv ~/data/Books_rating.csv ~/data/reviews_filtered.csv ~/data/books_processed.csv
+rm -f ./data/books_data.csv ./data/Books_rating.csv ./data/reviews_filtered.csv ./data/books_processed.csv
 echo "stage 1 completed"
