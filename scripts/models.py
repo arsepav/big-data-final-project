@@ -481,8 +481,8 @@ numerical_cols = [
 train_df = train_df.dropna(subset = tfidf_cols + numerical_cols)
 test_df = test_df.dropna(subset = tfidf_cols + numerical_cols)
 
-test_df = test_df.withColumn("helpfulness_wilson", col("helpfulness_wilson").cast("float"))
-train_df = train_df.withColumn("helpfulness_wilson", col("helpfulness_wilson").cast("float"))
+test_df = test_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
+train_df = train_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
 
 assembler = VectorAssembler(
     inputCols=numerical_cols,
