@@ -92,7 +92,7 @@ print(f"Using {test_df.count()} test instances after sampling.")
 # Take label from score
 # Cast to IntegerType
 print("\nCreating target variable (label) from score...")
-train_df_with_label = .withColumn("label", F.col("score").cast(IntegerType()))
+train_df_with_label = train_df.withColumn("label", F.col("score").cast(IntegerType()))
 test_df_with_label = test_df.withColumn("label", F.col("score").cast(IntegerType()))
 
 print("Schema after adding label column:")
