@@ -464,7 +464,7 @@ tfidf_cols = ["description_tfidf", "summary_tfidf", "title_tfidf",
               "review_text_tfidf", "publisher_tfidf"]
 
 for col_name in tfidf_cols:
-     = .withColumn(col_name, convert_udf(F.col(col_name)))
+    train_df = train_df.withColumn(col_name, convert_udf(F.col(col_name)))
     test_df = test_df.withColumn(col_name, convert_udf(F.col(col_name)))
 
 test_df = test_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
