@@ -92,7 +92,7 @@ print(f"Using {test_df.count()} test instances after sampling.")
 # Take label from score
 # Cast to IntegerType
 print("\nCreating target variable (label) from score...")
-train_df_with_label = train_df.withColumn("label", F.col("score").cast(IntegerType()))
+train_df_with_label = .withColumn("label", F.col("score").cast(IntegerType()))
 test_df_with_label = test_df.withColumn("label", F.col("score").cast(IntegerType()))
 
 print("Schema after adding label column:")
@@ -464,9 +464,11 @@ tfidf_cols = ["description_tfidf", "summary_tfidf", "title_tfidf",
               "review_text_tfidf", "publisher_tfidf"]
 
 for col_name in tfidf_cols:
-    train_df = train_df.withColumn(col_name, convert_udf(F.col(col_name)))
+     = .withColumn(col_name, convert_udf(F.col(col_name)))
     test_df = test_df.withColumn(col_name, convert_udf(F.col(col_name)))
 
+test_df = test_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
+ = .withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
 
 numerical_cols = [
     "author_idx", "book_idx", "category_idx", "helpfulness_wilson",
@@ -478,14 +480,12 @@ numerical_cols = [
     "review_year", "user_idx"
 ]
 
-train_df = train_df.dropna(subset = tfidf_cols + numerical_cols)
+ = .dropna(subset = tfidf_cols + numerical_cols)
 test_df = test_df.dropna(subset = tfidf_cols + numerical_cols)
 
-test_df = test_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
-train_df = train_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
 
 assembler = VectorAssembler(
-    inputCols=numerical_cols,
+    inputCols=tfidf_cols + numerical_cols,
     outputCol="features"
 )
 
