@@ -1,10 +1,9 @@
-import psycopg2 as psql
-import pandas as pd
 import os
 import re
-from tqdm import tqdm
 import unicodedata
-from io import StringIO
+import psycopg2 as psql
+import pandas as pd
+from tqdm import tqdm
 
 
 def normalize_column_names(df):
@@ -80,7 +79,8 @@ def convert_arrays(df):
     for col in ['authors', 'categories']:
         if col in df.columns:
             df[col] = (
-                df[col].apply(clean_array_string).apply(lambda x: f"{{{x}}}" if x and x.strip() and not x.endswith(',') else None)
+                df[col].apply(clean_array_string).apply(
+                    lambda x: f"{{{x}}}" if x and x.strip() and not x.endswith(',') else None)
             )
     return df
 

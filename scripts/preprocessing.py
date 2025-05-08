@@ -1,36 +1,37 @@
+import math
+import re
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, StringType
-import math
 from pyspark.ml.param import Params
 from pyspark.ml.feature import StringIndexer, CountVectorizer, Tokenizer, StopWordsRemover, HashingTF, IDF, Word2Vec
 from pyspark.ml import Pipeline, Transformer
 from pyspark.ml.param.shared import HasInputCol, HasOutputCol, Param
 from pyspark import keyword_only
 from pyspark.ml.util import DefaultParamsReadable, DefaultParamsWritable
-import re
 from pyspark import StorageLevel
 
-class MonthAwareCyclicalEncoder(Transformer, HasInputCol, HasOutputCol, 
+class MonthAwareCyclicalEncoder(Transformer, HasInputCol, HasOutputCol,
                               DefaultParamsReadable, DefaultParamsWritable):
-    
-    period_type = Param(Params._dummy(), "period_type", "Type of period (month/day)")
+
+    period_type = Param(Params._dummy(),
+                        "period_type", "Type of period (month/day)")
     @keyword_only
     def __init__(self, inputCol=None, outputCol=None, period_type="month"):
         super(MonthAwareCyclicalEncoder, self).__init__()
         self._setDefault(period_type=period_type)
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
-    @keyword_only        
+    @keyword_only
     def setParams(self, inputCol=None, outputCol=None, period_type="month"):
         kwargs = self._input_kwargs
         return self._set(**kwargs)
-    
+
     def _transform(self, dataset):
         input_col = self.getInputCol()
         output_col = self.getOutputCol()
         period_type = self.getOrDefault("period_type")
-        
+
         if period_type == "month":
             # For months, always use 12 as period
             return (dataset
@@ -39,11 +40,11 @@ class MonthAwareCyclicalEncoder(Transformer, HasInputCol, HasOutputCol,
         elif period_type == "day":
             # For days, calculate based on month
             return (dataset
-                   .withColumn("days_in_month", 
+                   .withColumn("days_in_month",
                               F.dayofmonth(F.last_day(F.col("review_datetime"))))
-                   .withColumn(f"{output_col}_sin", 
+                   .withColumn(f"{output_col}_sin",
                               F.sin(2 * math.pi * F.col(input_col) / F.col("days_in_month")))
-                   .withColumn(f"{output_col}_cos", 
+                   .withColumn(f"{output_col}_cos",
                               F.cos(2 * math.pi * F.col(input_col) / F.col("days_in_month")))
                    .drop("days_in_month"))
         else:
@@ -109,8 +110,10 @@ combined_df = combined_df.withColumn("score", F.col("score").cast("float"))
 combined_df = combined_df.fillna({"summary": "", "review_text": "", "description": ""})
 
 # Split helpfulness into helpful and total
-combined_df = combined_df.withColumn("helpful_yes", F.split(F.col("helpfulness"), "/").getItem(0).cast("float"))
-combined_df = combined_df.withColumn("helpful_total", F.split(F.col("helpfulness"), "/").getItem(1).cast("float"))
+combined_df = combined_df.withColumn("helpful_yes", F.split(
+    F.col("helpfulness"), "/").getItem(0).cast("float"))
+combined_df = combined_df.withColumn("helpful_total",
+                                     F.split(F.col("helpfulness"), "/").getItem(1).cast("float"))
 
 # Wilson lower bound helpfulness score
 z = 1.96  # 95% confidence
@@ -127,7 +130,8 @@ combined_df = combined_df.withColumn(
     """)
 )
 
-combined_df = combined_df.withColumn("helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
+combined_df = combined_df.withColumn(
+    "helpfulness_wilson", F.col("helpfulness_wilson").cast("float"))
 
 helpful_cols_to_drop = [
     "helpful_yes", "helpful_total", "helpfulness"
@@ -138,7 +142,8 @@ combined_df = combined_df.drop(*helpful_cols_to_drop)
 
 # Handle datetime transformation for review_time
 # Convert Unix timestamp to datetime and extract components
-combined_df = combined_df.withColumn("review_datetime", F.from_unixtime(F.col("review_time")/1000).cast("timestamp"))
+combined_df = combined_df.withColumn(
+    "review_datetime", F.from_unixtime(F.col("review_time")/1000).cast("timestamp"))
 
 combined_df = combined_df.withColumn("review_year", F.year("review_datetime"))
 combined_df = combined_df.withColumn("review_month", F.month("review_datetime"))
@@ -146,14 +151,14 @@ combined_df = combined_df.withColumn("review_day", F.dayofmonth("review_datetime
 
 # Apply cyclical encoding using CustomTransformer
 month_encoder = MonthAwareCyclicalEncoder(
-    inputCol="review_month", 
-    outputCol="review_month_encoded", 
+    inputCol="review_month",
+    outputCol="review_month_encoded",
     period_type="month"
 )
 
 day_encoder = MonthAwareCyclicalEncoder(
-    inputCol="review_day", 
-    outputCol="review_day_encoded", 
+    inputCol="review_day",
+    outputCol="review_day_encoded",
     period_type="day"
 )
 
@@ -162,21 +167,22 @@ temporal_pipeline = Pipeline(stages=[month_encoder, day_encoder])
 combined_df = temporal_pipeline.fit(combined_df).transform(combined_df)
 
 # Handle published_date from books
-combined_df = combined_df.withColumn("published_date", F.to_date(F.col("published_date"), "yyyy-MM-dd"))
+combined_df = combined_df.withColumn("published_date",
+                                     F.to_date(F.col("published_date"), "yyyy-MM-dd"))
 combined_df = combined_df.withColumn("published_year", F.year("published_date"))
 combined_df = combined_df.withColumn("published_month", F.month("published_date"))
 combined_df = combined_df.withColumn("published_day", F.dayofmonth("published_date"))
 
 # Apply cyclical encoding for published date using CustomTransformer
 pub_month_encoder = MonthAwareCyclicalEncoder(
-    inputCol="published_month", 
-    outputCol="published_month_encoded", 
+    inputCol="published_month",
+    outputCol="published_month_encoded",
     period_type="month"
 )
 
 pub_day_encoder = MonthAwareCyclicalEncoder(
-    inputCol="published_day", 
-    outputCol="published_day_encoded", 
+    inputCol="published_day",
+    outputCol="published_day_encoded",
     period_type="day"
 )
 pub_temporal_pipeline = Pipeline(stages=[pub_month_encoder, pub_day_encoder])
@@ -251,14 +257,17 @@ text_fields = ["description", "review_text", "summary", "title", "publisher"]
 
 # Shared stages: tokenization + stopwords removal
 tokenizers = [Tokenizer(inputCol=col, outputCol=f"{col}_tokens") for col in text_fields]
-removers = [StopWordsRemover(inputCol=f"{col}_tokens", outputCol=f"{col}_filtered") for col in text_fields]
+removers = [StopWordsRemover(inputCol=f"{col}_tokens", 
+                             outputCol=f"{col}_filtered") for col in text_fields]
 
 # TF-IDF stages
-hashers = [HashingTF(inputCol=f"{col}_filtered", outputCol=f"{col}_tf", numFeatures=300) for col in text_fields]
+hashers = [HashingTF(inputCol=f"{col}_filtered",
+                     outputCol=f"{col}_tf", numFeatures=300) for col in text_fields]
 idfs = [IDF(inputCol=f"{col}_tf", outputCol=f"{col}_tfidf") for col in text_fields]
 
 # Word2Vec stages
-word2vecs = [Word2Vec(inputCol=f"{col}_filtered", outputCol=f"{col}_w2v", vectorSize=100, minCount=2) for col in text_fields]
+word2vecs = [Word2Vec(inputCol=f"{col}_filtered",
+                      outputCol=f"{col}_w2v", vectorSize=100, minCount=2) for col in text_fields]
 
 
 # Build TF-IDF pipeline
@@ -278,7 +287,8 @@ cols_to_drop = [
 ]
 tfidf_df = tfidf_df.drop(*cols_to_drop)
 
-intermediate_cols = [f"{col}_{suffix}" for col in text_fields for suffix in ["tokens", "filtered", "tf"]]
+intermediate_cols = [f"{col}_{suffix}" for col
+                     in text_fields for suffix in ["tokens", "filtered", "tf"]]
 tfidf_df = tfidf_df.drop(*intermediate_cols)
 
 
