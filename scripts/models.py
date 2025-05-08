@@ -1,3 +1,5 @@
+import os
+
 from pyspark.sql import SparkSession, Row
 from pyspark.ml.regression import RandomForestRegressor, GBTRegressor, FMRegressor
 from pyspark.sql.types import *
@@ -8,7 +10,6 @@ from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationE
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import LogisticRegression
 from pyspark.ml.linalg import SparseVector, VectorUDT
-import os
 
 # For HDFS
 def run(command):
@@ -33,22 +34,22 @@ def struct_to_sparse_vector_udf(struct_col):
     values = struct_col['values']
 
     if size is None or (size > 0 and (indices is None or values is None)):
-         return None
+        return None
 
     if size > 0 and (not isinstance(indices, (list, tuple)) or not isinstance(values, (list, tuple)) or len(indices) != len(values)):
-         return None
+        return None
 
     if indices is not None:
-         try:
+        try:
             indices = [int(i) for i in indices]
-         except (ValueError, TypeError):
-             return None
+        except (ValueError, TypeError):
+            return None
 
     try:
         # Create SparseVector: SparseVector(size, indices, values)
         sparse_vector = SparseVector(size, indices, values)
         return sparse_vector
-    except Exception as e:
+    except:
         return None
 
 # SparkSession initiation
@@ -115,7 +116,7 @@ if missing_cols_features:
     assembler_input_cols = [c for c in assembler_input_cols if c not in missing_cols_features]
 
 if not assembler_input_cols:
-     raise ValueError("No valid feature columns remaining for VectorAssembler after filtering and checking presence. Cannot proceed.")
+    raise ValueError("No valid feature columns remaining for VectorAssembler after filtering and checking presence. Cannot proceed.")
 
 print("Feature columns used for assembly:", assembler_input_cols)
 
@@ -278,7 +279,7 @@ if 'test_df_prepared_regression' in locals() and test_df_prepared_regression is 
         rmse_rf_test = regression_evaluator_final_rmse.evaluate(rf_predictions_for_reg_eval)
         r2_rf_test = regression_evaluator_final_r2.evaluate(rf_predictions_for_reg_eval)
 
-        print(f"RandomForestRegressor Test Metrics:")
+        print("RandomForestRegressor Test Metrics:")
         print(f"  Accuracy = {accuracy_rf_test:.4f}")
         print(f"  F1 (weighted) = {f1_rf_test:.4f}")
         print(f"  Precision (weighted) = {precision_rf_test:.4f}")
@@ -312,7 +313,7 @@ if 'test_df_prepared_regression' in locals() and test_df_prepared_regression is 
         rmse_lr_test = regression_evaluator_final_rmse.evaluate(lr_predictions_for_reg_eval)
         r2_lr_test = regression_evaluator_final_r2.evaluate(lr_predictions_for_reg_eval)
 
-        print(f"LogisticRegression Test Metrics:")
+        print("LogisticRegression Test Metrics:")
         print(f"  Accuracy = {accuracy_lr_test:.4f}")
         print(f"  F1 (weighted) = {f1_lr_test:.4f}")
         print(f"  Precision (weighted) = {precision_lr_test:.4f}")
@@ -356,7 +357,7 @@ if 'test_df_prepared_regression' in locals() and test_df_prepared_regression is 
         except Exception as e:
             print(f"Error saving RandomForestRegressor model: {e}")
     else:
-         print("RandomForestRegressor best model not available. Skipping save.")
+        print("RandomForestRegressor best model not available. Skipping save.")
 
 
     if 'best_model_lr' in locals() and best_model_lr is not None:
@@ -368,7 +369,7 @@ if 'test_df_prepared_regression' in locals() and test_df_prepared_regression is 
         except Exception as e:
             print(f"Error saving LogisticRegression model: {e}")
     else:
-         print("LogisticRegression best model not available. Skipping save.")
+        print("LogisticRegression best model not available. Skipping save.")
 
 
     # Save prediction results on test sample
@@ -392,7 +393,7 @@ if 'test_df_prepared_regression' in locals() and test_df_prepared_regression is 
         except Exception as e:
             print(f"Error saving RandomForestRegressor predictions: {e}")
     else:
-         print("RandomForestRegressor test predictions not available or empty. Skipping save.")
+        print("RandomForestRegressor test predictions not available or empty. Skipping save.")
 
     # For LogisticRegression
     if 'lr_predictions_test' in locals() and lr_predictions_test is not None and lr_predictions_test.count() > 0:
@@ -413,7 +414,7 @@ if 'test_df_prepared_regression' in locals() and test_df_prepared_regression is 
         except Exception as e:
             print(f"Error saving LogisticRegression predictions: {e}")
     else:
-         print("LogisticRegression test predictions not available or empty. Skipping save.")
+        print("LogisticRegression test predictions not available or empty. Skipping save.")
 
 
     # DataFrames cache clearing
