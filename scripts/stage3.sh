@@ -2,13 +2,13 @@
 
 export HADOOP_CONF_DIR=/etc/hadoop/conf
 
-#spark-submit --master yarn preprocessing.py
+spark-submit --master yarn preprocessing.py
 
 hdfs dfs -getmerge project/data/train data/train.json
 
 hdfs dfs -getmerge project/data/test data/test.json
 
-# hdfs dfs -mkdir -p project/output/evaluation
+spark-submit --master yarn models.py
 
-# hdfs dfs -put -f output/evaluation.csv project/output/evaluation
+hdfs dfs -get -project/output/evaluation /home/team27/output/evaluation.csv
 
