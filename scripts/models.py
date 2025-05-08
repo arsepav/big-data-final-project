@@ -1,31 +1,14 @@
-from pyspark.sql import SparkSession
-from pyspark.ml.recommendation import ALS
-from pyspark.ml.evaluation import RankingEvaluator, RegressionEvaluator
-from pyspark.ml.tuning import ParamGridBuilder
-from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.regression import RandomForestRegressor, GBTRegressor 
+from pyspark.sql import SparkSession, Row
+from pyspark.ml.regression import RandomForestRegressor, GBTRegressor, FMRegressor
 from pyspark.sql.types import *
-from pyspark.ml.linalg import SparseVector, VectorUDT
-from pyspark.sql.functions import col, avg, expr, explode, struct, posexplode, log2
-from pyspark.ml.recommendation import ALS, ALSModel
-from pyspark.ml.evaluation import RankingEvaluator, RegressionEvaluator
 from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
-from pyspark.ml.regression import RandomForestRegressor 
-from pyspark.sql.functions import udf, collect_list
 from pyspark.ml import Pipeline
-from pyspark.sql.types import IntegerType
 from pyspark.sql import functions as F
-from pyspark.sql.functions import col, avg, expr, explode, struct, posexplode, lit, size, when, array_contains, sum as spark_sum, count as spark_count, log2, pow, rank 
-from pyspark.sql.window import Window 
-from pyspark.ml.evaluation import RankingEvaluator, RegressionEvaluator, MulticlassClassificationEvaluator 
-from pyspark.ml.tuning import ParamGridBuilder, CrossValidator 
+from pyspark.ml.evaluation import RegressionEvaluator, MulticlassClassificationEvaluator 
 from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.classification import RandomForestClassifier, LogisticRegression
+from pyspark.ml.classification import LogisticRegression
 from pyspark.ml.linalg import SparseVector, VectorUDT
-from pyspark.sql.functions import udf, col
-from pyspark.ml.linalg import SparseVector, VectorUDT
-from pyspark.sql import Row
-import numpy as np
+import os
 
 # For HDFS
 def run(command):
@@ -35,7 +18,7 @@ def run(command):
     return result
 
 # UDF struct -> SparseVector
-@udf(returnType=VectorUDT())
+@F.udf(returnType=VectorUDT())
 def struct_to_sparse_vector_udf(struct_col):
     # Converts a struct column (assuming sparse vector format) to SparseVector.
 
@@ -64,11 +47,8 @@ def struct_to_sparse_vector_udf(struct_col):
     try:
         # Create SparseVector: SparseVector(size, indices, values)
         sparse_vector = SparseVector(size, indices, values)
-        # print(f"Debug: Successfully created SparseVector: {sparse_vector}")
         return sparse_vector
     except Exception as e:
-        # Catch potential errors during SparseVector creation (e.g., invalid indices)
-        # print(f"Error creating SparseVector from struct {struct_col}: {e}. Returning None.")
         return None
 
 # SparkSession initiation
@@ -111,8 +91,8 @@ print(f"Using {test_df.count()} test instances after sampling.")
 # Take label from score
 # Cast to IntegerType
 print("\nCreating target variable (label) from score...")
-train_df_with_label = train_df.withColumn("label", col("score").cast(IntegerType()))
-test_df_with_label = test_df.withColumn("label", col("score").cast(IntegerType()))
+train_df_with_label = train_df.withColumn("label", F.col("score").cast(IntegerType()))
+test_df_with_label = test_df.withColumn("label", F.col("score").cast(IntegerType()))
 
 print("Schema after adding label column:")
 train_df_with_label.printSchema()
@@ -159,44 +139,46 @@ train_df_with_features = train_df_with_features.drop(*cols_to_drop)
 test_df_with_features = test_df_with_features.drop(*cols_to_drop)
 
 print("Dropping rows with null features or label...")
-train_df_prepared_classification = train_df_with_features.dropna(subset=["features", "label"])
-test_df_prepared_classification = test_df_with_features.dropna(subset=["features", "label"])
+train_df_prepared_regression = train_df_with_features.dropna(subset=["features", "label"])
+test_df_prepared_regression = test_df_with_features.dropna(subset=["features", "label"])
 
-print("Train data prepared schema for classification:")
-train_df_prepared_classification.printSchema()
-print("Test data prepared schema for classification:")
-test_df_prepared_classification.printSchema()
+print("Train data prepared schema for regression:")
+train_df_prepared_regression.printSchema()
+print("Test data prepared schema for regression:")
+test_df_prepared_regression.printSchema()
 
-# RandomForestClassifier
-print("--- Model 1: RandomForestClassifier ---")
+# RandomForestRegressor
+print("--- Model 1: RandomForestRegressor ---")
 
-# Make instance for RandomForestClassifier
-rf_classifier = RandomForestClassifier(featuresCol="features", labelCol="label")
+# Make instance for RandomForestRegressor
+rf_regressor = RandomForestRegressor(featuresCol="features", labelCol="label")
 
 paramGrid_rf = ParamGridBuilder() \
-    .addGrid(rf_classifier.numTrees, [10, 17, 25]) \
-    .addGrid(rf_classifier.maxDepth, [5, 7, 10]) \
+    .addGrid(rf_regressor.numTrees, [10, 17, 25]) \
+    .addGrid(rf_regressor.maxDepth, [5, 7, 10]) \
+    .addGrid(rf_regressor.featureSubsetStrategy, ['log2', 'onethird', 'sqrt']) \
     .build()
 
-print(f"ParamGrid for RandomForestClassifier has {len(paramGrid_rf)} combinations.")
+print(f"ParamGrid for RandomForestRegressor has {len(paramGrid_rf)} combinations.")
 
 
 # LogisticRegression
 print("--- Model 2: LogisticRegression ---")
 
 # Make instance for LogisticRegression
-lr_classifier = LogisticRegression(featuresCol="features", labelCol="label", family="multinomial")
+lr_regressor = LogisticRegression(featuresCol="features", labelCol="label", family="multinomial")
 
 paramGrid_lr = ParamGridBuilder() \
-    .addGrid(lr_classifier.regParam, [0.05, 0.17, 0.25]) \
-    .addGrid(lr_classifier.elasticNetParam, [0.1, 0.25, 0.5]) \
+    .addGrid(lr_regressor.regParam, [0.05, 0.17, 0.25]) \
+    .addGrid(lr_regressor.elasticNetParam, [0.1, 0.25, 0.5]) \
+    .addGrid(lr_regressor.threshold, [0.3, 0.5, 0.7]) \
     .build()
 
 print(f"ParamGrid for LogisticRegression has {len(paramGrid_lr)} combinations.")
 
 
 # Evaluator for CrossValidator (MulticlassClassification)
-multiclass_evaluator_cv = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="f1") # F1 weighted
+multiclass_evaluator_cv = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
 
 
 # CrossValidator Setup
@@ -205,8 +187,8 @@ seed_cv = 43
 
 print(f"Setting up CrossValidator with {num_folds_cv} folds")
 
-# CrossValidator for RandomForestClassifier
-cv_rf = CrossValidator(estimator=rf_classifier,
+# CrossValidator for RandomForestRegressor
+cv_rf = CrossValidator(estimator=rf_regressor,
                        estimatorParamMaps=paramGrid_rf,
                        evaluator=multiclass_evaluator_cv,
                        numFolds=num_folds_cv,
@@ -214,7 +196,7 @@ cv_rf = CrossValidator(estimator=rf_classifier,
                        seed=seed_cv)
 
 # CrossValidator for LogisticRegression
-cv_lr = CrossValidator(estimator=lr_classifier,
+cv_lr = CrossValidator(estimator=lr_regressor,
                        estimatorParamMaps=paramGrid_lr,
                        evaluator=multiclass_evaluator_cv,
                        numFolds=num_folds_cv,
@@ -222,29 +204,29 @@ cv_lr = CrossValidator(estimator=lr_classifier,
                        seed=seed_cv)
 
 # CrossValidator running
-# CrossValidator trains models on folds train_df_prepared_classification
-print("--- Running CrossValidator for RandomForestClassifier ---")
+# CrossValidator trains models on folds train_df_prepared_regression
+print("--- Running CrossValidator for RandomForestRegressor ---")
 
-if 'train_df_prepared_classification' in locals() and train_df_prepared_classification is not None and train_df_prepared_classification.count() > 0:
-    cv_model_rf = cv_rf.fit(train_df_prepared_classification)
-    print("CrossValidator completed for RandomForestClassifier.")
+if 'train_df_prepared_regression' in locals() and train_df_prepared_regression is not None and train_df_prepared_regression.count() > 0:
+    cv_model_rf = cv_rf.fit(train_df_prepared_regression)
+    print("CrossValidator completed for RandomForestRegressor.")
 
     # Take best model
     best_model_rf = cv_model_rf.bestModel
     best_params_rf = cv_model_rf.getEstimatorParamMaps()[cv_model_rf.avgMetrics.index(max(cv_model_rf.avgMetrics))]
-    print(f"\nBest parameters found by CV for RandomForestClassifier: {best_params_rf}")
-    print(f"Average F1 (weighted) for best RandomForestClassifier during CV: {max(cv_model_rf.avgMetrics):.4f}")
+    print(f"\nBest parameters found by CV for RandomForestRegressor: {best_params_rf}")
+    print(f"Average F1 (weighted) for best RandomForestRegressor during CV: {max(cv_model_rf.avgMetrics):.4f}")
 
 else:
-    print("Error: train_df_prepared_classification is not available or empty. Cannot run CrossValidator for RandomForestClassifier.")
+    print("Error: train_df_prepared_regression is not available or empty. Cannot run CrossValidator for RandomForestRegressor.")
     cv_model_rf = None
     best_model_rf = None
     best_params_rf = None
 
     
 print("\n--- Running CrossValidator for LogisticRegression ---")
-if 'train_df_prepared_classification' in locals() and train_df_prepared_classification is not None and train_df_prepared_classification.count() > 0:
-    cv_model_lr = cv_lr.fit(train_df_prepared_classification)
+if 'train_df_prepared_regression' in locals() and train_df_prepared_regression is not None and train_df_prepared_regression.count() > 0:
+    cv_model_lr = cv_lr.fit(train_df_prepared_regression)
     print("CrossValidator completed for LogisticRegression.")
 
     # Take best model
@@ -254,7 +236,7 @@ if 'train_df_prepared_classification' in locals() and train_df_prepared_classifi
     print(f"Average F1 (weighted) for best LogisticRegression during CV: {max(cv_model_lr.avgMetrics):.4f}")
 
 else:
-    print("Error: train_df_prepared_classification is not available or empty. Cannot run CrossValidator for LogisticRegression.")
+    print("Error: train_df_prepared_regression is not available or empty. Cannot run CrossValidator for LogisticRegression.")
     cv_model_lr = None
     best_model_lr = None
     best_params_lr = None
@@ -266,7 +248,7 @@ best_model_lr.write().overwrite().save("LR")
 
 print("\n--- Evaluating Best Models on Test Set ---")
 
-if 'test_df_prepared_classification' in locals() and test_df_prepared_classification is not None and test_df_prepared_classification.count() > 0:
+if 'test_df_prepared_regression' in locals() and test_df_prepared_regression is not None and test_df_prepared_regression.count() > 0:
 
     # MulticlassClassificationEvaluator for final evaluation (Accuracy, F1, Precision, Recall)
     multiclass_evaluator_final_f1 = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="f1") # F1 weighted
@@ -274,29 +256,29 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
     multiclass_evaluator_final_precision = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="weightedPrecision") # Weighted Precision
     multiclass_evaluator_final_recall = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="weightedRecall") # Weighted Recall
 
-    # Regression Evaluators for Classification Models (for RMSE and R2)
+    # Regression Evaluators for regression Models (for RMSE and R2)
     regression_evaluator_final_rmse = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="rmse")
     regression_evaluator_final_r2 = RegressionEvaluator(labelCol="label", predictionCol="prediction", metricName="r2")
 
-    # RandomForestClassifier evaluation
+    # RandomForestRegressor evaluation
     if 'best_model_rf' in locals() and best_model_rf is not None:
-        print("\nEvaluating RandomForestClassifier on test data...")
-        rf_predictions_test = best_model_rf.transform(test_df_prepared_classification)
+        print("\nEvaluating RandomForestRegressor on test data...")
+        rf_predictions_test = best_model_rf.transform(test_df_prepared_regression)
 
-        # Classification metrics
+        # regression metrics
         f1_rf_test = multiclass_evaluator_final_f1.evaluate(rf_predictions_test)
         accuracy_rf_test = multiclass_evaluator_final_accuracy.evaluate(rf_predictions_test)
         precision_rf_test = multiclass_evaluator_final_precision.evaluate(rf_predictions_test)
         recall_rf_test = multiclass_evaluator_final_recall.evaluate(rf_predictions_test)
 
         # Regression metrics
-        rf_predictions_for_reg_eval = rf_predictions_test.withColumn("prediction", col("prediction").cast(DoubleType()))
-        rf_predictions_for_reg_eval = rf_predictions_for_reg_eval.withColumn("label", col("label").cast(DoubleType()))
+        rf_predictions_for_reg_eval = rf_predictions_test.withColumn("prediction", F.col("prediction").cast(DoubleType()))
+        rf_predictions_for_reg_eval = rf_predictions_for_reg_eval.withColumn("label", F.col("label").cast(DoubleType()))
 
         rmse_rf_test = regression_evaluator_final_rmse.evaluate(rf_predictions_for_reg_eval)
         r2_rf_test = regression_evaluator_final_r2.evaluate(rf_predictions_for_reg_eval)
 
-        print(f"RandomForestClassifier Test Metrics:")
+        print(f"RandomForestRegressor Test Metrics:")
         print(f"  Accuracy = {accuracy_rf_test:.4f}")
         print(f"  F1 (weighted) = {f1_rf_test:.4f}")
         print(f"  Precision (weighted) = {precision_rf_test:.4f}")
@@ -306,7 +288,7 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
 
 
     else:
-        print("RandomForestClassifier best model not available. Skipping test evaluation.")
+        print("RandomForestRegressor best model not available. Skipping test evaluation.")
         f1_rf_test, accuracy_rf_test, precision_rf_test, recall_rf_test = None, None, None, None
         rmse_rf_test, r2_rf_test = None, None
 
@@ -314,18 +296,18 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
     # LogisticRegression evaluation
     if 'best_model_lr' in locals() and best_model_lr is not None:
         print("\nEvaluating LogisticRegression on test data...")
-        lr_predictions_test = best_model_lr.transform(test_df_prepared_classification)
+        lr_predictions_test = best_model_lr.transform(test_df_prepared_regression)
 
-        # Classification metrics
+        # regression metrics
         f1_lr_test = multiclass_evaluator_final_f1.evaluate(lr_predictions_test)
         accuracy_lr_test = multiclass_evaluator_final_accuracy.evaluate(lr_predictions_test)
         precision_lr_test = multiclass_evaluator_final_precision.evaluate(lr_predictions_test)
         recall_lr_test = multiclass_evaluator_final_recall.evaluate(lr_predictions_test)
 
         # Regression metrics
-        lr_predictions_for_reg_eval = lr_predictions_test.withColumn("prediction", col("prediction").cast(DoubleType()))
+        lr_predictions_for_reg_eval = lr_predictions_test.withColumn("prediction", F.col("prediction").cast(DoubleType()))
         # Cast label for DoubleType
-        lr_predictions_for_reg_eval = lr_predictions_for_reg_eval.withColumn("label", col("label").cast(DoubleType()))
+        lr_predictions_for_reg_eval = lr_predictions_for_reg_eval.withColumn("label", F.col("label").cast(DoubleType()))
 
         rmse_lr_test = regression_evaluator_final_rmse.evaluate(lr_predictions_for_reg_eval)
         r2_lr_test = regression_evaluator_final_r2.evaluate(lr_predictions_for_reg_eval)
@@ -349,7 +331,7 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
     print("\n--- Model Comparison ---")
     # Craete DataFrame for report
     comparison_data_cls = [
-        ("RandomForestClassifier",
+        ("RandomForestRegressor",
          f"Accuracy: {accuracy_rf_test:.4f}" if accuracy_rf_test is not None else "Accuracy: N/A",
          f"F1 (weighted): {f1_rf_test:.4f}" if f1_rf_test is not None else "F1: N/A",
          f"RMSE: {rmse_rf_test:.4f}" if rmse_rf_test is not None else "RMSE: N/A",
@@ -361,44 +343,24 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
          f"R2: {r2_lr_test:.4f}" if r2_lr_test is not None else "R2: N/A"),
     ]
 
-    # Update columns names RMSE и R2
-    comparison_df_cls = spark.createDataFrame(comparison_data_cls, ["model", "Accuracy", "F1 (weighted)", "RMSE", "R2"])
-
-    # Output comparison table
-    print("Classification Model Performance Comparison:")
-    comparison_df_cls.show(truncate=False)
-
-    # Save comparison results
-    evaluation_table_name_cls = f"{team}_projectdb.classification_evaluation_results"
-    print(f"\nSaving classification evaluation results to Hive table: {evaluation_table_name_cls}")
-    try:
-        comparison_df_cls.coalesce(1)\
-            .write\
-            .mode("overwrite")\
-            .format("csv")\
-            .option("sep", ",")\
-            .option("header","true")\
-            .saveAsTable(evaluation_table_name_cls)
-        print("Classification evaluation results saved.")
-    except Exception as e:
-        print(f"Error saving classification evaluation results to Hive: {e}")
+    
 
     # Save best models
-    print("Saving best classification models...")
+    print("Saving best regression models...")
     if 'best_model_rf' in locals() and best_model_rf is not None:
-        rf_model_save_path = "project/models/classification_randomforest"
-        print(f"Saving RandomForestClassifier model to {rf_model_save_path}...")
+        rf_model_save_path = "project/models/regression_randomforest"
+        print(f"Saving RandomForestRegressor model to {rf_model_save_path}...")
         try:
             best_model_rf.write().overwrite().save(rf_model_save_path)
-            print(f"RandomForestClassifier model saved to {rf_model_save_path}")
+            print(f"RandomForestRegressor model saved to {rf_model_save_path}")
         except Exception as e:
-            print(f"Error saving RandomForestClassifier model: {e}")
+            print(f"Error saving RandomForestRegressor model: {e}")
     else:
-         print("RandomForestClassifier best model not available. Skipping save.")
+         print("RandomForestRegressor best model not available. Skipping save.")
 
 
     if 'best_model_lr' in locals() and best_model_lr is not None:
-        lr_model_save_path = "project/models/classification_logisticregression"
+        lr_model_save_path = "project/models/regression_logisticregression"
         print(f"Saving LogisticRegression model to {lr_model_save_path}...")
         try:
             best_model_lr.write().overwrite().save(lr_model_save_path)
@@ -411,14 +373,14 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
 
     # Save prediction results on test sample
 
-    # For RandomForestClassifier
+    # For RandomForestRegressor
     if 'rf_predictions_test' in locals() and rf_predictions_test is not None and rf_predictions_test.count() > 0:
-        print("\nSaving prediction results for RandomForestClassifier test set...")
-        rf_predictions_output_path = "project/output/classification_randomforest_predictions"
+        print("\nSaving prediction results for RandomForestRegressor test set...")
+        rf_predictions_output_path = "project/output/regression_randomforest_predictions"
         try:
             rf_predictions_test.select(
-                col("label").alias("actual_label"),
-                col("prediction").cast(IntegerType()).alias("predicted_label")
+                F.col("label").alias("actual_label"),
+                F.col("prediction").cast(IntegerType()).alias("predicted_label")
             ).coalesce(1)\
             .write\
             .mode("overwrite")\
@@ -426,20 +388,20 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
             .option("sep", ",")\
             .option("header","true")\
             .save(rf_predictions_output_path)
-            print(f"Predicted labels for RandomForestClassifier test set saved to {rf_predictions_output_path}")
+            print(f"Predicted labels for RandomForestRegressor test set saved to {rf_predictions_output_path}")
         except Exception as e:
-            print(f"Error saving RandomForestClassifier predictions: {e}")
+            print(f"Error saving RandomForestRegressor predictions: {e}")
     else:
-         print("RandomForestClassifier test predictions not available or empty. Skipping save.")
+         print("RandomForestRegressor test predictions not available or empty. Skipping save.")
 
-    # Для LogisticRegression
+    # For LogisticRegression
     if 'lr_predictions_test' in locals() and lr_predictions_test is not None and lr_predictions_test.count() > 0:
         print("\nSaving prediction results for LogisticRegression test set...")
-        lr_predictions_output_path = "project/output/classification_logisticregression_predictions" 
+        lr_predictions_output_path = "project/output/regression_logisticregression_predictions" 
         try:
             lr_predictions_test.select(
-                col("label").alias("actual_label"),
-                col("prediction").cast(IntegerType()).alias("predicted_label")
+                F.col("label").alias("actual_label"),
+                F.col("prediction").cast(IntegerType()).alias("predicted_label")
             ).coalesce(1)\
             .write\
             .mode("overwrite")\
@@ -459,164 +421,52 @@ if 'test_df_prepared_classification' in locals() and test_df_prepared_classifica
     if 'lr_predictions_test' in locals() and lr_predictions_test: lr_predictions_test.unpersist()
 
 else:
-    print("Test data prepared for classification is not available or empty. Skipping all test evaluations and subsequent steps.")
+    print("Test data prepared for regression is not available or empty. Skipping all test evaluations and subsequent steps.")
 
     
-print("Saving classification evaluation results to CSV...")
+print("Saving regression evaluation results to CSV...")
 
 # Prepare data for csv
 rf_metrics_available = all(v is not None for v in [accuracy_rf_test, f1_rf_test, precision_rf_test, recall_rf_test, rmse_rf_test, r2_rf_test]) if 'accuracy_rf_test' in locals() else False
 lr_metrics_available = all(v is not None for v in [accuracy_lr_test, f1_lr_test, precision_lr_test, recall_lr_test, rmse_lr_test, r2_lr_test]) if 'accuracy_lr_test' in locals() else False
 
 
-csv_comparison_data = []
+models = []
 
 if rf_metrics_available:
-    csv_comparison_data.append(
-        ("RandomForestClassifier",
-         accuracy_rf_test,
-         f1_rf_test,
-         precision_rf_test,
-         recall_rf_test,
+    models.append(
+        ["RandomForestRegressor",
          rmse_rf_test,
-         r2_rf_test)
+         r2_rf_test]
     )
 
 if lr_metrics_available:
-    csv_comparison_data.append(
-        ("LogisticRegression",
-         accuracy_lr_test,
-         f1_lr_test,
-         precision_lr_test,
-         recall_lr_test,
+    models.append(
+        ["LogisticRegression",
          rmse_lr_test,
-         r2_lr_test)
+         r2_lr_test]
     )
 
-# Initiate csv schema
-from pyspark.sql.types import StringType, DoubleType, StructType, StructField
-
-csv_schema = StructType([
-    StructField("model_name", StringType(), True),
-    StructField("Accuracy", DoubleType(), True),
-    StructField("F1_weighted", DoubleType(), True),
-    StructField("Precision_weighted", DoubleType(), True),
-    StructField("Recall_weighted", DoubleType(), True),
-    StructField("RMSE", DoubleType(), True),
-    StructField("R2", DoubleType(), True),
-])
-
-# Create Dataframe
-csv_comparison_df = None
-try:
-    if csv_comparison_data:
-        csv_comparison_df = spark.createDataFrame(csv_comparison_data, schema=csv_schema)
-        print("DataFrame for CSV created.")
-    else:
-        print("No evaluation data available to create CSV DataFrame.")
-except Exception as e:
-    print(f"Error creating DataFrame for CSV: {e}")
 
 
-# Output HDFS path for the CSV file
-csv_output_path = "project/output/evaluation/"
+# GBTRegressor part
 
-if csv_comparison_df is not None:
-    print(f"Saving comparison DataFrame to CSV at {csv_output_path}...")
-    try:
-        csv_comparison_df.coalesce(1)\
-            .write\
-            .mode("overwrite") \
-            .option("header", "true") \
-            .option("sep", ",") \
-            .csv(csv_output_path)
-        print("Classification evaluation results saved to CSV.")
-    except Exception as e:
-        print(f"Error saving classification evaluation results to CSV: {e}")
-else:
-    print("Skipping saving CSV as no evaluation data DataFrame was created.")
-    
-print("Saving Sample Data and Predictions to HDFS")
-
-base_example_output_path = "project/output/example"
-
-if 'prediction_sample' in locals() and prediction_sample is not None and prediction_sample.count() > 0:
-    original_sample_path = f"{base_example_output_path}/original_sample"
-    print(f"Saving original sample data to {original_sample_path}...")
-    try:
-        cols_to_save_original = ["label", "features"]
-        if "book_title" in prediction_sample.columns:
-            cols_to_save_original.append("book_title")
-
-        prediction_sample.select(cols_to_save_original).coalesce(1)\
-            .write\
-            .mode("overwrite")\
-            .parquet(original_sample_path)
-        print("Original sample data saved.")
-    except Exception as e:
-        print(f"Error saving original sample data: {e}")
-else:
-    print("Original sample data not available or empty. Skipping save.")
-
-
-if 'rf_sample_predictions' in locals() and rf_sample_predictions is not None and rf_sample_predictions.count() > 0:
-    rf_predictions_sample_path = f"{base_example_output_path}/randomforest_predictions_sample"
-    print(f"Saving RandomForestClassifier predictions on sample to {rf_predictions_sample_path}...")
-    try:
-        cols_to_save_rf = ["user_idx", "book_idx", "label", "features", "rawPrediction", "probability", "prediction"]
-        if "book_title" in rf_sample_predictions.columns:
-            cols_to_save_rf.append("book_title")
-
-        rf_sample_predictions.select(cols_to_save_rf).coalesce(1)\
-            .write\
-            .mode("overwrite")\
-            .parquet(rf_predictions_sample_path)
-        print("RandomForestClassifier predictions on sample saved.")
-    except Exception as e:
-        print(f"Error saving RandomForestClassifier predictions on sample: {e}")
-else:
-    print("RandomForestClassifier prediction sample not available or empty. Skipping save.")
-
-
-if 'lr_sample_predictions' in locals() and lr_sample_predictions is not None and lr_sample_predictions.count() > 0:
-    lr_predictions_sample_path = f"{base_example_output_path}/logisticregression_predictions_sample"
-    print(f"Saving LogisticRegression predictions on sample to {lr_predictions_sample_path}...")
-    try:
-        cols_to_save_lr = ["user_idx", "book_idx", "label", "features", "rawPrediction", "probability", "prediction"]
-        if "book_title" in lr_sample_predictions.columns:
-            cols_to_save_lr.append("book_title")
-
-        lr_sample_predictions.select(cols_to_save_lr).coalesce(1)\
-            .write\
-            .mode("overwrite")\
-            .parquet(lr_predictions_sample_path)
-        print("LogisticRegression predictions on sample saved.")
-    except Exception as e:
-        print(f"Error saving LogisticRegression predictions on sample: {e}")
-else:
-    print("LogisticRegression prediction sample not available or empty. Skipping save.")
-
-    
-    
-
-
-
-## Step 1: Prepare Feature Vector
+# udf to cast tfidf fields to sparse vectors
 def convert_struct_to_sparsevector(struct):
     if struct is None:
         return SparseVector(0, [], [])
     return SparseVector(struct.size, struct.indices, struct.values)
 
+convert_udf = F.udf(convert_struct_to_sparsevector, VectorUDT())
 
-convert_udf = udf(convert_struct_to_sparsevector, VectorUDT())
-
-tfidf_cols = ["description_tfidf", "summary_tfidf", "title_tfidf"]
+tfidf_cols = ["description_tfidf", "summary_tfidf", "title_tfidf",
+              "review_text_tfidf", "publisher_tfidf"]
 
 for col_name in tfidf_cols:
-    train_df = train_df.withColumn(col_name, convert_udf(col(col_name)))
-    test_df = test_df.withColumn(col_name, convert_udf(col(col_name)))
- 
-    
+    train_df = train_df.withColumn(col_name, convert_udf(F.col(col_name)))
+    test_df = test_df.withColumn(col_name, convert_udf(F.col(col_name)))
+
+
 numerical_cols = [
     "author_idx", "book_idx", "category_idx", "helpfulness_wilson",
     "published_day_encoded_cos", "published_day_encoded_sin",
@@ -627,8 +477,8 @@ numerical_cols = [
     "review_year", "user_idx"
 ]
 
-train_df = train_df.dropna(subset =  numerical_cols)
-test_df = test_df.dropna(subset =  numerical_cols)
+train_df = train_df.dropna(subset = tfidf_cols + numerical_cols)
+test_df = test_df.dropna(subset = tfidf_cols + numerical_cols)
 
 assembler = VectorAssembler(
     inputCols=numerical_cols,
@@ -680,11 +530,12 @@ predictions_gbt = best_model_gbt.transform(test_df)
 rmse_gbt = evaluator.evaluate(predictions_gbt, {evaluator.metricName: "rmse"})
 r2_gbt = evaluator.evaluate(predictions_gbt, {evaluator.metricName: "r2"})
 
-model_path = "file:///home/team27/models/gbt"
+model_path_gbt = "file:///home/team27/models/gbt"
 
-best_model.write().overwrite().save(model_path)  
+best_model_gbt.write().overwrite().save(model_path_gbt)  
 
 
+# FMRegressor part
 
 fm = FMRegressor(
     featuresCol="features",
@@ -726,12 +577,12 @@ predictions_fm = best_model_fm.transform(test_df)
 rmse_fm = evaluator.evaluate(predictions_fm, {evaluator.metricName: "rmse"})
 r2_fm = evaluator.evaluate(predictions_fm, {evaluator.metricName: "r2"})
 
-model_path = "file:///home/team27/models/fm"
+model_path_fm = "file:///home/team27/models/fm"
 
-best_model.write().overwrite().save(model_path)  
+best_model_fm.write().overwrite().save(model_path_fm)  
 
 # Create data frame to report performance of the models
-models = [[str(best_model_gbt),rmse_gbt, r2_gbt], [str(best_model_fm),rmse_fm, r2_fm]]
+models.extend(["GBTegressor", rmse_gbt, r2_gbt], ["FMRegressor", rmse_fm, r2_fm])
 
 #temp = list(map(list, models.items()))
 df = spark.createDataFrame(models, ["model", "RMSE", "R2"])
@@ -744,4 +595,4 @@ df.coalesce(1)\
     .format("csv")\
     .option("sep", ",")\
     .option("header","true")\
-    .save("project/output/evaluation2")
+    .save("project/output/evaluation.csv")
