@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Pre-processing
+echo "Running pre-processing"
+bash scripts/preprocess.sh
 
 # Run the big data pipeline
 echo "Running Stage 1 of the pipeline - PostgreSQL + Sqoop"
